@@ -21,21 +21,33 @@ from mainwindow import DeviceControlMainWindow
 
 from hardware.camera_opencv import OpenCVCamera
 from hardware.camera_basler import BaslerCamera
+from hardware.camera_mock_robot import MockRobotViewportCamera
 
 
 def main():
 
     # --- change configuration here ----------------------------------------------
+    use_mock_robot_camera = True
 
     # create interface and connect
     oms = OpenMicroStageInterface(show_communication=False, show_log_messages=True)
-    oms.connect('/dev/ttyACM0')       # on linux
+    # oms.connect('/dev/ttyACM0')       # on linux
+    oms.connect('mock')       # on linux
     # oms.connect('COM1')             # on windows
 
     # Setup camera
     # camera = BaslerCamera()
-    camera = OpenCVCamera(camera_index=0)
-    camera.set_exposure_time(16000)
+    base_camera = OpenCVCamera(camera_index=0)
+    base_camera.set_exposure_time(16000)
+    camera = base_camera
+    if use_mock_robot_camera:
+        camera = MockRobotViewportCamera(
+            source_camera=base_camera,
+            oms=oms,
+            viewport_scale=0.45,   # visible central rectangle as fraction of source frame
+            xy_mm_to_px=140.0,     # how strongly stage XY moves viewport center
+            z_mm_to_scale=0.05,    # Z changes viewport zoom
+        )
 
     # ------------------------------------------------------------------------
 

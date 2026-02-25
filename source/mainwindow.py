@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QLabel, QGridLayout, QMessageBox, QButtonGroup,
     QDoubleSpinBox, QFileDialog, QMainWindow, QFrame, QSpacerItem, QSizePolicy
 )
-from PySide6.QtCore import Qt, QMargins
+from PySide6.QtCore import Qt, QMargins, QTimer
 from PySide6.QtGui import QFont
 
 class DeviceControlMainWindow(QMainWindow):
@@ -43,6 +43,7 @@ class DeviceControlMainWindow(QMainWindow):
         self.step_size_idx = 1
         self.waypoints = []
         self.waypoint_idx = 1000000
+        self.move_buttons = {}
 
         # Trackers
         self.image_point_tracker = ImagePointTracker()
@@ -74,18 +75,33 @@ class DeviceControlMainWindow(QMainWindow):
         grid = QGridLayout()
         grid.setSpacing(10)
 
-        grid.addWidget(self.create_button("Y-", lambda: self.move_axis(1, -1), font), 0, 1)
-        grid.addWidget(self.create_button("Z+", lambda: self.move_axis(2, +1), font), 0, 3)
-        grid.addWidget(self.create_button("X-", lambda: self.move_axis(0, -1), font), 1, 0)
+        btn_y_neg = self.create_button("Y-", lambda: self.move_axis(1, -1), font)
+        btn_z_pos = self.create_button("Z+", lambda: self.move_axis(2, +1), font)
+        btn_x_neg = self.create_button("X-", lambda: self.move_axis(0, -1), font)
+        grid.addWidget(btn_y_neg, 0, 1)
+        grid.addWidget(btn_z_pos, 0, 3)
+        grid.addWidget(btn_x_neg, 1, 0)
 
         center_label = QLabel("•")
         center_label.setFont(QFont("Arial", 30))
         center_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         grid.addWidget(center_label, 1, 1)
 
-        grid.addWidget(self.create_button("X+", lambda: self.move_axis(0, +1), font), 1, 2)
-        grid.addWidget(self.create_button("Y+", lambda: self.move_axis(1, +1), font), 2, 1)
-        grid.addWidget(self.create_button("Z-", lambda: self.move_axis(2, -1), font), 2, 3)
+        btn_x_pos = self.create_button("X+", lambda: self.move_axis(0, +1), font)
+        btn_y_pos = self.create_button("Y+", lambda: self.move_axis(1, +1), font)
+        btn_z_neg = self.create_button("Z-", lambda: self.move_axis(2, -1), font)
+        grid.addWidget(btn_x_pos, 1, 2)
+        grid.addWidget(btn_y_pos, 2, 1)
+        grid.addWidget(btn_z_neg, 2, 3)
+
+        self.move_buttons = {
+            (0, -1): btn_x_neg,
+            (0, +1): btn_x_pos,
+            (1, -1): btn_y_neg,
+            (1, +1): btn_y_pos,
+            (2, -1): btn_z_neg,
+            (2, +1): btn_z_pos,
+        }
 
         main_layout.addLayout(grid)
 
@@ -163,6 +179,7 @@ class DeviceControlMainWindow(QMainWindow):
         layout.addWidget(self.create_button("Save Transform", self.save_transform, font), 6, 1)
         layout.addWidget(self.create_button("Fiber Alignment", self.run_fiber_alignment, font), 7, 0)
         layout.addWidget(self.create_button("Home", self.home, font), 7, 1)
+        self._add_mock_camera_controls(layout, start_row=8)
         main_layout.addWidget(advanced_frame)
 
         # vertical stretch
@@ -209,6 +226,87 @@ class DeviceControlMainWindow(QMainWindow):
             step_layout.addWidget(btn)
         self.control_layout.addLayout(step_layout)
 
+    def _add_mock_camera_controls(self, layout: QGridLayout, start_row: int):
+        if not self._has_mock_camera_controls():
+            return
+
+        params = self._read_mock_camera_params()
+        if params is None:
+            return
+
+        layout.addItem(QSpacerItem(0, 10, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed), start_row, 0, 1, 2)
+        layout.addWidget(self.create_label("Mock Camera"), start_row + 1, 0, 1, 2)
+
+        label_scale = self.create_label("Viewport Scale:", font_size=11)
+        label_xy = self.create_label("XY mm->px:", font_size=11)
+        label_z = self.create_label("Z zoom gain:", font_size=11)
+
+        self.mock_cam_scale_spin = QDoubleSpinBox()
+        self.mock_cam_scale_spin.setRange(0.25, 0.9)
+        self.mock_cam_scale_spin.setSingleStep(0.01)
+        self.mock_cam_scale_spin.setDecimals(2)
+        self.mock_cam_scale_spin.setValue(float(params["viewport_scale"]))
+        self.mock_cam_scale_spin.valueChanged.connect(self._on_mock_camera_param_changed)
+
+        self.mock_cam_xy_spin = QDoubleSpinBox()
+        self.mock_cam_xy_spin.setRange(1.0, 2000.0)
+        self.mock_cam_xy_spin.setSingleStep(5.0)
+        self.mock_cam_xy_spin.setDecimals(1)
+        self.mock_cam_xy_spin.setValue(float(params["xy_mm_to_px"]))
+        self.mock_cam_xy_spin.valueChanged.connect(self._on_mock_camera_param_changed)
+
+        self.mock_cam_z_spin = QDoubleSpinBox()
+        self.mock_cam_z_spin.setRange(0.0, 1.0)
+        self.mock_cam_z_spin.setSingleStep(0.01)
+        self.mock_cam_z_spin.setDecimals(2)
+        self.mock_cam_z_spin.setValue(float(params["z_mm_to_scale"]))
+        self.mock_cam_z_spin.valueChanged.connect(self._on_mock_camera_param_changed)
+
+        layout.addWidget(label_scale, start_row + 2, 0)
+        layout.addWidget(self.mock_cam_scale_spin, start_row + 2, 1)
+        layout.addWidget(label_xy, start_row + 3, 0)
+        layout.addWidget(self.mock_cam_xy_spin, start_row + 3, 1)
+        layout.addWidget(label_z, start_row + 4, 0)
+        layout.addWidget(self.mock_cam_z_spin, start_row + 4, 1)
+
+    def _has_mock_camera_controls(self):
+        return (
+            hasattr(self.camera, "set_mock_view_params")
+            and (
+                hasattr(self.camera, "get_mock_view_params")
+                or (
+                    hasattr(self.camera, "viewport_scale")
+                    and hasattr(self.camera, "xy_mm_to_px")
+                    and hasattr(self.camera, "z_mm_to_scale")
+                )
+            )
+        )
+
+    def _read_mock_camera_params(self):
+        if not self._has_mock_camera_controls():
+            return None
+
+        if hasattr(self.camera, "get_mock_view_params"):
+            return self.camera.get_mock_view_params()
+
+        return {
+            "viewport_scale": float(self.camera.viewport_scale),
+            "xy_mm_to_px": float(self.camera.xy_mm_to_px),
+            "z_mm_to_scale": float(self.camera.z_mm_to_scale),
+        }
+
+    def _on_mock_camera_param_changed(self, _value=None):
+        if not self._has_mock_camera_controls():
+            return
+        if not hasattr(self, "mock_cam_scale_spin"):
+            return
+
+        self.camera.set_mock_view_params(
+            viewport_scale=self.mock_cam_scale_spin.value(),
+            xy_mm_to_px=self.mock_cam_xy_spin.value(),
+            z_mm_to_scale=self.mock_cam_z_spin.value(),
+        )
+
     @staticmethod
     def create_label(text, alignment=Qt.AlignmentFlag.AlignLeft, font_size=12):
         label = QLabel(text)
@@ -254,6 +352,10 @@ class DeviceControlMainWindow(QMainWindow):
             QPushButton:pressed {
                 background-color: #32a877;
             }
+            QPushButton[kbflash="true"] {
+                background-color: #f29f05;
+                border: 1px solid #ffd27a;
+            }
         """)
 
     @staticmethod
@@ -293,6 +395,26 @@ class DeviceControlMainWindow(QMainWindow):
         self.current_pos[axis] += direction * d * flipped[axis]
         self.current_pos[axis] = max(min(self.current_pos[axis], 10), -10)
         self.oms.move_to(*self.current_pos, self.feedrates[self.step_size_idx])
+
+    def move_axis_from_keyboard(self, axis, direction):
+        self.move_axis(axis, direction)
+        button = self.move_buttons.get((axis, direction))
+        if button is None:
+            return
+
+        button.setProperty("kbflash", True)
+        button.style().unpolish(button)
+        button.style().polish(button)
+        button.update()
+
+        QTimer.singleShot(120, lambda b=button: self._clear_kb_flash(b))
+
+    @staticmethod
+    def _clear_kb_flash(button):
+        button.setProperty("kbflash", False)
+        button.style().unpolish(button)
+        button.style().polish(button)
+        button.update()
 
     def add_waypoint(self):
         if self.realtime_control_widget.is_running():
@@ -486,14 +608,14 @@ class DeviceControlMainWindow(QMainWindow):
         json.dump(T.tolist(), open("transform.json", "w"))
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_A:
-            self.move_axis(0, -1)
-        elif event.key() == Qt.Key.Key_D:
-            self.move_axis(0, +1)
-        elif event.key() == Qt.Key.Key_W:
-            self.move_axis(1, -1)
-        elif event.key() == Qt.Key.Key_S:
-            self.move_axis(1, +1)
+        if event.key() in (Qt.Key.Key_A, Qt.Key.Key_Left):
+            self.move_axis_from_keyboard(0, -1)
+        elif event.key() in (Qt.Key.Key_D, Qt.Key.Key_Right):
+            self.move_axis_from_keyboard(0, +1)
+        elif event.key() in (Qt.Key.Key_W, Qt.Key.Key_Up):
+            self.move_axis_from_keyboard(1, -1)
+        elif event.key() in (Qt.Key.Key_S, Qt.Key.Key_Down):
+            self.move_axis_from_keyboard(1, +1)
         elif event.key() == Qt.Key.Key_R:
             self.add_waypoint()
         else:

@@ -14,6 +14,10 @@ import serial
 import numpy as np
 from colorama import Fore, Style, init
 
+from collections import deque
+from hardware.mocks import FakeSerial
+
+
 # --- SerialInterface --------------------------------------------------------------------------------------------------
 
 class SerialInterface:
@@ -83,7 +87,11 @@ class SerialInterface:
         print(f"[SerialInterface] Connecting to port '{self.port}'...", end='')
         while time.time() < deadline:
             try:
-                self.serial = serial.Serial(self.port, self.baud_rate, timeout=2)
+                # Special case
+                if self.port == "mock":
+                    self.serial = FakeSerial()
+                else:
+                    self.serial = serial.Serial(self.port, self.baud_rate, timeout=2)
                 print(f" [OK]")
                 print(Style.RESET_ALL, end='')
                 return True
