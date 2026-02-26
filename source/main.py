@@ -5,6 +5,7 @@
 # Author:  M. S. (diffraction limited)
 # --------------------------------------------------------------------------------------
 
+import argparse
 import os
 
 # Disable scaling
@@ -22,29 +23,66 @@ from PySide6.QtWidgets import QApplication
 
 EXPOSURE_TIME_US = 16_000
 
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Open Micro-Manipulator GUI")
+    parser.add_argument("--port", default="mock", help="Serial port (e.g. /dev/ttyACM0, COM1, mock)")
+    parser.add_argument("--baud-rate", type=int, default=921600, help="Serial baud rate")
+    parser.add_argument("--camera-backend", choices=("opencv", "basler"), default="opencv")
+    parser.add_argument("--camera-index", type=int, default=0, help="OpenCV camera index")
+    parser.add_argument("--exposure-us", type=float, default=EXPOSURE_TIME_US, help="Camera exposure in microseconds")
+    parser.add_argument(
+        "--use-mock-camera",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable mock robot viewport camera wrapper",
+    )
+    parser.add_argument("--mock-viewport-scale", type=float, default=0.45)
+    parser.add_argument("--mock-xy-mm-to-px", type=float, default=140.0)
+    parser.add_argument("--mock-z-mm-to-scale", type=float, default=0.05)
+    parser.add_argument("--pixel-per-mm", type=float, default=2000.0)
+    parser.add_argument(
+        "--show-communication",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Print sent commands and command responses",
+    )
+    parser.add_argument(
+        "--show-log-messages",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Print device log messages",
+    )
+    return parser
+
+
 def main():
+    args = build_parser().parse_args()
 
-    # --- change configuration here ----------------------------------------------
-    use_mock_robot_camera = True
-
+    # --- configuration -------------------------------------------------------
     # create interface and connect
-    oms = OpenMicroStageInterface(show_communication=False, show_log_messages=True)
-    # oms.connect('/dev/ttyACM0')       # on linux
-    oms.connect('mock')       # on linux
-    # oms.connect('COM1')             # on windows
+    oms = OpenMicroStageInterface(
+        show_communication=args.show_communication,
+        show_log_messages=args.show_log_messages,
+    )
+    oms.connect(args.port, args.baud_rate)
 
     # Setup camera
-    # camera = BaslerCamera()
-    base_camera = OpenCVCamera(camera_index=0)
-    base_camera.set_exposure_time(EXPOSURE_TIME_US)
+    if args.camera_backend == "basler":
+        from hardware.camera_basler import BaslerCamera
+
+        base_camera = BaslerCamera()
+    else:
+        base_camera = OpenCVCamera(camera_index=args.camera_index)
+
+    base_camera.set_exposure_time(args.exposure_us)
     camera = base_camera
-    if use_mock_robot_camera:
+    if args.use_mock_camera:
         camera = MockRobotViewportCamera(
             source_camera=base_camera,
             oms=oms,
-            viewport_scale=0.45,   # visible central rectangle as fraction of source frame
-            xy_mm_to_px=140.0,     # how strongly stage XY moves viewport center
-            z_mm_to_scale=0.05,    # Z changes viewport zoom
+            viewport_scale=args.mock_viewport_scale,
+            xy_mm_to_px=args.mock_xy_mm_to_px,
+            z_mm_to_scale=args.mock_z_mm_to_scale,
         )
 
     # ------------------------------------------------------------------------
@@ -63,7 +101,7 @@ def main():
         else:
             vis_img = frame.copy()
 
-        gui.update_controller(frame, vis_img, pixel_per_mm=2000.0)
+        gui.update_controller(frame, vis_img, pixel_per_mm=args.pixel_per_mm)
 
         app.processEvents()
         a = gui.isVisible()
