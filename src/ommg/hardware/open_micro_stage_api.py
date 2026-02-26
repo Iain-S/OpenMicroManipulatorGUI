@@ -15,8 +15,9 @@ from typing import Callable
 import numpy as np
 import serial
 from colorama import Fore, Style
-from hardware.mocks import FakeSerial
 from PySide6.QtCore import QThread
+
+from ommg.hardware.mocks import FakeSerial
 
 # --- SerialInterface --------------------------------------------------------------------------------------------------
 

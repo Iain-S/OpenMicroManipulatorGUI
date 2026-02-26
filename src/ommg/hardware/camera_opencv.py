@@ -6,7 +6,8 @@
 # --------------------------------------------------------------------------------------
 
 import cv2
-from hardware.abstract_camera import AbstractCamera
+
+from ommg.hardware.abstract_camera import AbstractCamera
 
 
 class OpenCVCamera(AbstractCamera):

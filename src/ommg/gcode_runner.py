@@ -10,7 +10,7 @@ import threading
 import time
 from collections.abc import Callable
 
-from hardware.open_micro_stage_api import OpenMicroStageInterface
+from ommg.hardware.open_micro_stage_api import OpenMicroStageInterface
 
 
 class GCodeRunner:

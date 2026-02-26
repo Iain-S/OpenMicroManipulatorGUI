@@ -3,12 +3,12 @@ import sys
 import unittest
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-SOURCE_ROOT = os.path.join(PROJECT_ROOT, "source")
-if SOURCE_ROOT not in sys.path:
-    sys.path.insert(0, SOURCE_ROOT)
+SRC_ROOT = os.path.join(PROJECT_ROOT, "src")
+if SRC_ROOT not in sys.path:
+    sys.path.insert(0, SRC_ROOT)
 
 # Imported after local path injection for test-only module discovery.
-from hardware.mocks import FakeSerial  # noqa: E402
+from ommg.hardware.mocks import FakeSerial  # noqa: E402
 
 
 def _drain_lines(fake: FakeSerial) -> list[str]:

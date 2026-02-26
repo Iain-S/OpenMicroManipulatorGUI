@@ -7,10 +7,11 @@
 
 
 import numpy as np
-from hardware.open_micro_stage_api import OpenMicroStageInterface
 from PySide6.QtCore import QEvent, QMargins, QMutex, QObject, QPoint, Qt, QThread, Signal
 from PySide6.QtGui import QCursor, QMouseEvent
 from PySide6.QtWidgets import QApplication, QDoubleSpinBox, QGridLayout, QLabel, QPushButton, QSizePolicy, QWidget
+
+from ommg.hardware.open_micro_stage_api import OpenMicroStageInterface
 
 
 class UpdateWorker(QThread):

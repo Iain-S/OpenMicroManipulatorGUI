@@ -15,11 +15,12 @@ os.environ['GDK_SCALE'] = '1'
 os.environ['GDK_DPI_SCALE'] = '1'
 
 import cv2
-from hardware.camera_mock_robot import MockRobotViewportCamera
-from hardware.camera_opencv import OpenCVCamera
-from hardware.open_micro_stage_api import OpenMicroStageInterface
-from mainwindow import DeviceControlMainWindow
 from PySide6.QtWidgets import QApplication
+
+from ommg.hardware.camera_mock_robot import MockRobotViewportCamera
+from ommg.hardware.camera_opencv import OpenCVCamera
+from ommg.hardware.open_micro_stage_api import OpenMicroStageInterface
+from ommg.mainwindow import DeviceControlMainWindow
 
 EXPOSURE_TIME_US = 16_000
 
@@ -68,7 +69,7 @@ def main():
 
     # Setup camera
     if args.camera_backend == "basler":
-        from hardware.camera_basler import BaslerCamera
+        from ommg.hardware.camera_basler import BaslerCamera
 
         base_camera = BaslerCamera()
     else:
