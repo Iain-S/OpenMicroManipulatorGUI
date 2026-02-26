@@ -29,19 +29,14 @@ jobs:
           cache: pip
           cache-dependency-path: |
             pyproject.toml
-            source/requirements.txt
             .pre-commit-config.yaml
-
-      - name: Create virtual environment
-        run: python -m venv venv
 
       - name: Install dependencies
         run: |
-          venv/bin/python -m pip install --upgrade pip
-          venv/bin/python -m pip install -r source/requirements.txt
-          venv/bin/python -m pip install pre-commit ruff ty
+          python -m pip install --upgrade pip
+          python -m pip install .[dev]
 
       - name: Run pre-commit
         env:
           PRE_COMMIT_HOME: .pre-commit-cache
-        run: venv/bin/pre-commit run --all-files
+        run: pre-commit run --all-files

@@ -6,10 +6,28 @@ authors = [
     { name = "Iain-S", email = "25081046+Iain-S@users.noreply.github.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "colorama",
+    "numpy",
+    "numpy-quaternion",
+    "opencv-python",
+    "pyserial",
+    "pyside6",
+    "scikit-optimize",
+]
 
 [project.scripts]
 ommg = "ommg:main"
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit",
+    "ruff",
+    "ty",
+]
+basler = [
+    "pypylon",
+]
 
 [dependency-groups]
 dev = [

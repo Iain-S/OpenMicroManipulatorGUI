@@ -33,13 +33,12 @@ jobs:
           cache: pip
           cache-dependency-path: |
             pyproject.toml
-            source/requirements.txt
             tests/**/*.py
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r source/requirements.txt
+          python -m pip install .
 
       - name: Run unit tests
         timeout-minutes: 10
