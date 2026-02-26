@@ -14,7 +14,7 @@ You  can find the Open Micro-Manipulator repository.
 1. Clone the repository and navigate into the project directory.
 2. Install the project and dependencies from `pyproject.toml`: `pip install -e .`
 3. Optional (Basler camera support): `pip install -e .[basler]`
-4. Run the application: `python source/main.py`
+4. Run the application: `python -m ommg.main` (or simply `ommg` after install)
 
 ### Development tooling
 
