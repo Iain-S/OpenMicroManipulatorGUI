@@ -13,16 +13,14 @@ os.environ['QT_AUTO_SCREEN_SCALE_FACTOR'] = '0'
 os.environ['GDK_SCALE'] = '1'
 os.environ['GDK_DPI_SCALE'] = '1'
 
-from PySide6.QtWidgets import QApplication
-
 import cv2
+from hardware.camera_mock_robot import MockRobotViewportCamera
+from hardware.camera_opencv import OpenCVCamera
 from hardware.open_micro_stage_api import OpenMicroStageInterface
 from mainwindow import DeviceControlMainWindow
+from PySide6.QtWidgets import QApplication
 
-from hardware.camera_opencv import OpenCVCamera
-from hardware.camera_basler import BaslerCamera
-from hardware.camera_mock_robot import MockRobotViewportCamera
-
+EXPOSURE_TIME_US = 16_000
 
 def main():
 
@@ -38,7 +36,7 @@ def main():
     # Setup camera
     # camera = BaslerCamera()
     base_camera = OpenCVCamera(camera_index=0)
-    base_camera.set_exposure_time(16000)
+    base_camera.set_exposure_time(EXPOSURE_TIME_US)
     camera = base_camera
     if use_mock_robot_camera:
         camera = MockRobotViewportCamera(

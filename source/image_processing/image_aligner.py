@@ -8,13 +8,14 @@
 import cv2
 import numpy as np
 
+
 class ECCImageAligner:
     def __init__(self, gamma = 1.0):
-        self.ref_gray = None
+        self.ref_gray: np.ndarray | None = None
         self.warp_mode = cv2.MOTION_EUCLIDEAN  # rotation + translation
         # self.warp_mode = cv2.MOTION_AFFINE  # rotation + translation
         self.gamma=gamma
-        self.warp_matrix = None
+        self.warp_matrix: np.ndarray | None = None
 
     def set_reference(self, ref_img):
         """Set the reference image (color or grayscale)."""

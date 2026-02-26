@@ -6,12 +6,14 @@
 # --------------------------------------------------------------------------------------
 
 import time
+from types import SimpleNamespace
+
+import numpy as np
+from hardware.camera_basler import BaslerCamera
+from hardware.open_micro_stage_api import OpenMicroStageInterface
 from scipy.optimize import minimize
 from skopt import gp_minimize
 from skopt.space import Real
-
-from hardware.open_micro_stage_api import OpenMicroStageInterface
-from hardware.camera_basler import BaslerCamera
 
 
 class OpticalAlignment:
@@ -22,7 +24,7 @@ class OpticalAlignment:
         self.search_box_size=np.array([1,1,1])
         self.eval_count = 0
         self.best_eval = 0
-        self.best_position = None
+        self.best_position: np.ndarray | None = None
 
     def evaluate(self, parameter):
         # parameter = np.clip(parameter, -self.search_box_size, self.search_box_size)
@@ -145,10 +147,6 @@ class OpticalAlignment:
 
         return best_position, best_brightness
 
-
-import numpy as np
-from types import SimpleNamespace
-
 def minimize_lrs(
     fun,
     x0,
@@ -210,4 +208,3 @@ def minimize_lrs(
         nit=num_iterations
     )
     return result
-

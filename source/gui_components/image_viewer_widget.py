@@ -6,9 +6,10 @@
 # --------------------------------------------------------------------------------------
 
 import math
-from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsPixmapItem
-from PySide6.QtGui import QPixmap, QImage, QPainter, QMouseEvent, QPen, QColor, QKeyEvent, QBrush
-from PySide6.QtCore import Qt, QCoreApplication
+
+from PySide6.QtCore import QCoreApplication, Qt
+from PySide6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QPainter, QPen, QPixmap
+from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsScene, QGraphicsView
 
 
 class ImageViewerWidget(QGraphicsView):

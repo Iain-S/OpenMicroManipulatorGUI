@@ -5,45 +5,53 @@
 # Author:  M. S. (diffraction limited)
 # --------------------------------------------------------------------------------------
 
-import os
 import json
-
-from hardware.camera_opencv import OpenCVCamera
-from hardware.camera_basler import BaslerCamera
+from typing import Any
 
 import cv2
 import numpy as np
+from gcode_runner import GCodeRunner
+from gui_components.image_viewer_widget import ImageViewerWidget
+from gui_components.realtime_controller_widget import RealtimeControllerWidget
 from hardware.open_micro_stage_api import OpenMicroStageInterface
 from image_processing.image_point_tracker import ImagePointTracker
 from optical_alignment import OpticalAlignment
-from gui_components.image_viewer_widget import ImageViewerWidget
-from gui_components.realtime_controller_widget import RealtimeControllerWidget
-from gcode_runner import GCodeRunner
-
-from PySide6.QtWidgets import (
-    QApplication, QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QLabel, QGridLayout, QMessageBox, QButtonGroup,
-    QDoubleSpinBox, QFileDialog, QMainWindow, QFrame, QSpacerItem, QSizePolicy
-)
-from PySide6.QtCore import Qt, QMargins, QTimer
+from PySide6.QtCore import QMargins, Qt, QTimer
 from PySide6.QtGui import QFont
+from PySide6.QtWidgets import (
+    QButtonGroup,
+    QDoubleSpinBox,
+    QFileDialog,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QSizePolicy,
+    QSpacerItem,
+    QVBoxLayout,
+    QWidget,
+)
+
 
 class DeviceControlMainWindow(QMainWindow):
     def __init__(self, oms: OpenMicroStageInterface, camera):
         super().__init__()
         # Data and State
         self.oms = oms
-        self.camera = camera
-        self.gcode_runner = None
+        self.camera: Any = camera
+        self.gcode_runner: GCodeRunner | None = None
 
-        self.last_frame = None
-        self.draw_buffer = None
+        self.last_frame: np.ndarray | None = None
+        self.draw_buffer: np.ndarray | None = None
         self.current_pos = [0, 0, 0]
         self.step_sizes = [1.0, 0.1, 0.01, 0.001, 0.0001]
         self.feedrates = [50.0, 5.0, 5.0, 1.0, 0.1]
         self.step_size_idx = 1
         self.waypoints = []
         self.waypoint_idx = 1000000
-        self.move_buttons = {}
+        self.move_buttons: dict[tuple[int, int], QPushButton] = {}
 
         # Trackers
         self.image_point_tracker = ImagePointTracker()
@@ -115,7 +123,8 @@ class DeviceControlMainWindow(QMainWindow):
         for i, val in enumerate(self.step_sizes):
             btn = self.create_button(str(val * 1000), lambda checked=False, idx=i: self.set_step_size(idx), font)
             btn.setCheckable(True)
-            if i == self.step_size_idx: btn.setChecked(True)
+            if i == self.step_size_idx:
+                btn.setChecked(True)
             self.step_button_group.addButton(btn, i)
             step_layout.addWidget(btn)
 
@@ -221,7 +230,8 @@ class DeviceControlMainWindow(QMainWindow):
         for i, val in enumerate(self.step_sizes):
             btn = self.create_button(str(val * 1000), lambda checked=False, idx=i: self.set_step_size(idx), QFont())
             btn.setCheckable(True)
-            if i == self.step_size_idx: btn.setChecked(True)
+            if i == self.step_size_idx:
+                btn.setChecked(True)
             self.step_button_group.addButton(btn, i)
             step_layout.addWidget(btn)
         self.control_layout.addLayout(step_layout)
@@ -429,7 +439,7 @@ class DeviceControlMainWindow(QMainWindow):
 
     def save_path(self):
         if len(self.waypoints) <= 0:
-            QMessageBox.critical(self, "Save Error", f"Waypoint list is empty")
+            QMessageBox.critical(self, "Save Error", "Waypoint list is empty")
             return
 
         path, _ = QFileDialog.getSaveFileName(
@@ -526,7 +536,7 @@ class DeviceControlMainWindow(QMainWindow):
             if not path:
                 return
             try:
-                gcode = open(path, 'r').read()
+                gcode = open(path).read()
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to open file:\n{e}")
                 return
@@ -602,7 +612,8 @@ class DeviceControlMainWindow(QMainWindow):
             confirmed = QMessageBox.question(None, "Save Transform", "Are you sure?",
                                              QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                              QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes
-            if not confirmed: return
+            if not confirmed:
+                return
 
         T = self.oms.get_workspace_transform()
         json.dump(T.tolist(), open("transform.json", "w"))

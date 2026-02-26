@@ -8,16 +8,17 @@
 import cv2
 import numpy as np
 
+
 class ImagePointTracker:
     def __init__(self, patch_size=50, search_radius=20):
         self.patch_size = patch_size
         self.search_radius = search_radius
-        self.template = None
-        self.prev_img = None
-        self.prev_pos = (0,0)
+        self.template: np.ndarray | None = None
+        self.prev_img: np.ndarray | None = None
+        self.prev_pos: tuple[int, int] = (0, 0)
 
     def reset(self):
-        self.prev_pos = (0,0)
+        self.prev_pos = (0, 0)
         self.template = None
 
     def set_track_point(self, img, x, y):
@@ -38,7 +39,7 @@ class ImagePointTracker:
         Track the point in the new image using local template matching.
         :return: (x, y) of tracked point or None if lost
         """
-        if self.template is None or self.prev_pos is None:
+        if self.template is None:
             return 0, 0
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
