@@ -9,11 +9,12 @@ import time
 from types import SimpleNamespace
 
 import numpy as np
-from hardware.camera_basler import BaslerCamera
-from hardware.open_micro_stage_api import OpenMicroStageInterface
 from scipy.optimize import minimize
 from skopt import gp_minimize
 from skopt.space import Real
+
+from ommg.hardware.camera_basler import BaslerCamera
+from ommg.hardware.open_micro_stage_api import OpenMicroStageInterface
 
 
 class OpticalAlignment:

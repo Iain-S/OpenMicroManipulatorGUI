@@ -10,12 +10,6 @@ from typing import Any
 
 import cv2
 import numpy as np
-from gcode_runner import GCodeRunner
-from gui_components.image_viewer_widget import ImageViewerWidget
-from gui_components.realtime_controller_widget import RealtimeControllerWidget
-from hardware.open_micro_stage_api import OpenMicroStageInterface
-from image_processing.image_point_tracker import ImagePointTracker
-from optical_alignment import OpticalAlignment
 from PySide6.QtCore import QMargins, Qt, QTimer
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
@@ -33,6 +27,13 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from ommg.gcode_runner import GCodeRunner
+from ommg.gui_components.image_viewer_widget import ImageViewerWidget
+from ommg.gui_components.realtime_controller_widget import RealtimeControllerWidget
+from ommg.hardware.open_micro_stage_api import OpenMicroStageInterface
+from ommg.image_processing.image_point_tracker import ImagePointTracker
+from ommg.optical_alignment import OpticalAlignment
 
 
 class DeviceControlMainWindow(QMainWindow):

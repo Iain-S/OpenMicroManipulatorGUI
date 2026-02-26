@@ -5,8 +5,9 @@
 # Author:  M. S. (diffraction limited)
 # --------------------------------------------------------------------------------------
 
-from hardware.abstract_camera import AbstractCamera
 from pypylon import pylon
+
+from ommg.hardware.abstract_camera import AbstractCamera
 
 
 class BaslerCamera(AbstractCamera):

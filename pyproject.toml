@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-ommg = "ommg:main"
+ommg = "ommg.main:main"
 
 [project.optional-dependencies]
 dev = [
@@ -53,10 +53,12 @@ select = [
     "B",    # flake8-bugbear
     "C4",   # flake8-comprehensions
     "UP",   # pyupgrade
+    "TID",  # flake8-tidy-imports
 ]
 ignore = [
     "E501",  # line too long (handled by formatter)
 ]
 
 # [tool.ruff.lint.flake8-tidy-imports]
-# ban-relative-imports = "all"
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
