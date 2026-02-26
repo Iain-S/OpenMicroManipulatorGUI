@@ -5,30 +5,18 @@
 # Author:  M. S. (diffraction limited)
 # --------------------------------------------------------------------------------------
 
-import time
 
-from PySide6.QtWidgets import (
-    QWidget,
-    QPushButton,
-    QDoubleSpinBox,
-    QLabel,
-    QGridLayout,
-    QSizePolicy,
-    QApplication
-)
-from PySide6.QtCore import Qt, QObject, QEvent, QMargins, QPoint, Signal, QMutex
-from PySide6.QtGui import QCursor, QMouseEvent
+import numpy as np
 from hardware.open_micro_stage_api import OpenMicroStageInterface
-import numpy as np
+from PySide6.QtCore import QEvent, QMargins, QMutex, QObject, QPoint, Qt, QThread, Signal
+from PySide6.QtGui import QCursor, QMouseEvent
+from PySide6.QtWidgets import QApplication, QDoubleSpinBox, QGridLayout, QLabel, QPushButton, QSizePolicy, QWidget
 
-from PySide6.QtCore import QThread, Signal
-import numpy as np
-from PySide6.QtGui import QCursor
 
 class UpdateWorker(QThread):
     pose_changed = Signal(np.ndarray)  # send updated pose to main thread if needed
 
-    def __init__(self, oms, motion_gain, motion_limits, lowpass_strength=0.5, update_frequency=240, parent=None):
+    def __init__(self, oms: OpenMicroStageInterface, motion_gain, motion_limits, lowpass_strength=0.5, update_frequency=240, parent=None):
         super().__init__(parent)
         self.oms = oms
         self.motion_gain =  np.array( motion_gain, dtype=np.float32)
@@ -122,7 +110,7 @@ class RealtimeControllerWidget(QWidget):
         self.motion_gain = np.array( [-0.001, 0.001, -0.02], dtype=np.float32)
         self.motion_limits = np.array( [1.0, 1.0, 1.0], dtype=np.float32)
 
-        self.update_thread = None
+        self.update_thread: UpdateWorker | None = None
         self.setup_ui()
 
         self.base_widget.setMouseTracking(True)
@@ -167,10 +155,12 @@ class RealtimeControllerWidget(QWidget):
         self.setLayout(layout)
 
     def get_current_pose(self):
+        if self.update_thread is None:
+            return [0.0, 0.0, 0.0]
         return self.update_thread.get_current_pose()
 
     def is_running(self):
-        return self.update_thread.running
+        return self.update_thread is not None and self.update_thread.running
 
     def read_gui_settings(self):
         lx = ly = self.spinbox_xy_range.value()

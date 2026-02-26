@@ -5,14 +5,16 @@
 # Author:  M. S. (diffraction limited)
 # --------------------------------------------------------------------------------------
 
-from pypylon import pylon
 from hardware.abstract_camera import AbstractCamera
-import numpy as np
+from pypylon import pylon
+
 
 class BaslerCamera(AbstractCamera):
     def __init__(self):
-        self.camera = None
+        self.camera: pylon.InstantCamera | None = None
+        self.converter: pylon.ImageFormatConverter | None = None
         self.connected = False
+        self.grabbing = False
         try:
             self.camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
             self.camera.Open()
@@ -24,7 +26,6 @@ class BaslerCamera(AbstractCamera):
             self.converter.OutputPixelFormat = pylon.PixelType_BGR8packed
             self.converter.OutputBitAlignment = pylon.OutputBitAlignment_MsbAligned
 
-            self.grabbing = False
             self.connected = True
         except Exception as e:
             print(f"Camera initialization failed: {e}")

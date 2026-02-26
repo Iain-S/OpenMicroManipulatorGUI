@@ -4,17 +4,157 @@
 #          All text in here must be included in any redistribution.
 # Author:  M. S. (diffraction limited)
 # --------------------------------------------------------------------------------------
-
+import queue
+import re
 import threading
 import time
-import re
+from dataclasses import dataclass, field
 from enum import Enum
+from typing import Callable
 
-import serial
 import numpy as np
-from colorama import Fore, Style, init
+import serial
+from colorama import Fore, Style
+from hardware.mocks import FakeSerial
+from PySide6.QtCore import QThread
 
 # --- SerialInterface --------------------------------------------------------------------------------------------------
+
+@dataclass
+class _CommandRequest:
+    cmd: str
+    timeout_s: float
+    done: threading.Event = field(default_factory=threading.Event)
+    response_string: str = ""
+    response_status: "SerialInterface.ReplyStatus" | None = None
+    response_error_msg: str = ""
+
+
+class _SerialActorThread(QThread):
+    def __init__(self, interface: "SerialInterface"):
+        super().__init__()
+        self.interface: SerialInterface = interface
+        self._stop_event = threading.Event()
+        self._request_queue: queue.Queue[_CommandRequest] = queue.Queue()
+        self._active_request: _CommandRequest | None = None
+        self._active_deadline = 0.0
+        self._active_lines: list[str] = []
+        self._line_buffer = ""
+
+    def stop(self):
+        self._stop_event.set()
+        self.wait(1000)
+
+    def enqueue(self, request: _CommandRequest):
+        self._request_queue.put(request)
+
+    def run(self):
+        while not self._stop_event.is_set():
+            if not self.interface._is_serial_open():
+                self.interface.connect(self.interface.reconnect_timeout)
+                if not self.interface._is_serial_open():
+                    time.sleep(0.2)
+                    continue
+
+            if self._active_request is None:
+                self._start_next_request_if_available()
+
+            if self._active_request is not None and time.time() >= self._active_deadline:
+                print(Fore.MAGENTA + "[SerialInterface] Command timeout, device didn't reply in time" + Style.RESET_ALL)
+                self._finish_active_request(SerialInterface.ReplyStatus.TIMEOUT, "")
+                continue
+
+            try:
+                if self.interface.serial is not None and self.interface.serial.in_waiting:
+                    char = self.interface.serial.read(1).decode("ascii", errors="ignore")
+                    if char in ("\n", "\r"):
+                        if self._line_buffer:
+                            self._handle_line(self._line_buffer)
+                            self._line_buffer = ""
+                    else:
+                        self._line_buffer += char
+                else:
+                    time.sleep(0.001)
+            except (serial.SerialException, OSError) as e:
+                self._handle_disconnect(e)
+
+    def _start_next_request_if_available(self):
+        try:
+            request = self._request_queue.get_nowait()
+        except queue.Empty:
+            return
+
+        try:
+            self.interface.serial.write(request.cmd.encode("ascii"))
+            self.interface.serial.flush()
+            self._active_request = request
+            self._active_deadline = time.time() + request.timeout_s
+            self._active_lines = []
+        except (serial.SerialException, OSError) as e:
+            request.response_status = SerialInterface.ReplyStatus.ERROR
+            request.response_error_msg = str(e)
+            request.done.set()
+            self._handle_disconnect(e)
+
+    def _handle_line(self, line: str):
+        log_level, log_msg = self.interface._check_log_msg(line)
+
+        if log_level is not None:
+            if self.interface.log_message_callback:
+                self.interface.log_message_callback(log_level, log_msg)
+            return
+
+        if self._active_request is None:
+            if self.interface.unsolicited_msg_callback:
+                self.interface.unsolicited_msg_callback(line)
+            return
+
+        line_lower = line.lower()
+        if line_lower.startswith("ok"):
+            self._finish_active_request(SerialInterface.ReplyStatus.OK, "")
+        elif line_lower.startswith("busy"):
+            self._finish_active_request(SerialInterface.ReplyStatus.BUSY, "")
+        elif line_lower.startswith("error"):
+            parts = line.split(":", 1)
+            error_msg = parts[1].strip() if len(parts) > 1 else ""
+            self._finish_active_request(SerialInterface.ReplyStatus.ERROR, error_msg)
+        else:
+            self._active_lines.append(line)
+
+    def _finish_active_request(self, status: "SerialInterface.ReplyStatus", error_msg: str):
+        request = self._active_request
+        if request is None:
+            return
+
+        response = ""
+        if self._active_lines:
+            response = "\n".join(self._active_lines) + "\n"
+
+        request.response_status = status
+        request.response_error_msg = error_msg
+        request.response_string = response
+        request.done.set()
+
+        if self.interface.command_msg_callback:
+            self.interface.command_msg_callback(response, status, error_msg)
+
+        self._active_request = None
+        self._active_deadline = 0.0
+        self._active_lines = []
+
+    def _handle_disconnect(self, error: Exception):
+        print(Fore.MAGENTA + f"[SerialInterface] Lost connection: {error}" + Style.RESET_ALL)
+
+        if self._active_request is not None:
+            self._finish_active_request(SerialInterface.ReplyStatus.ERROR, str(error))
+
+        try:
+            if self.interface.serial is not None and self.interface.serial.is_open:
+                self.interface.serial.close()
+        except Exception:
+            pass
+
+        self.interface.serial = None
 
 class SerialInterface:
 
@@ -39,9 +179,9 @@ class SerialInterface:
     }
 
     def __init__(self, port: str, baud_rate: int = 115200,
-                 command_msg_callback=None,
-                 log_msg_callback=None,
-                 unsolicited_msg_callback=None,
+                 command_msg_callback: Callable[[str, ReplyStatus | None, str], None] | None = None,
+                 log_msg_callback: Callable[[LogLevel, str], None] | None = None,
+                 unsolicited_msg_callback: Callable[[str], None] | None = None,
                  reconnect_timeout: int = 5):
         """
         Initializes the serial connection and starts background reader.
@@ -53,28 +193,21 @@ class SerialInterface:
         self.port = port
         self.baud_rate = baud_rate
         self.reconnect_timeout = reconnect_timeout
-        self.serial = None  # initialized on connect
+        self.serial: serial.Serial | FakeSerial | None = None  # initialized on connect
 
         self.command_msg_callback = command_msg_callback
         self.log_message_callback = log_msg_callback
         self.unsolicited_msg_callback = unsolicited_msg_callback
 
-        # Synchronization for blocking send/receive
-        self._lock = threading.Lock()
-        self._condition = threading.Condition(self._lock)
-        self._waiting_for_response = False
-        self._response_string = ""
-        self._response_status = None
-        self._response_error_msg = None
+        self._actor: _SerialActorThread | None = None
 
         self.connect(self.reconnect_timeout)
 
-        # Start reader thread
-        self._reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
-        self._reader_thread.start()
+        # Start actor thread that owns command dispatch + serial reads.
+        self._actor = _SerialActorThread(self)
+        self._actor.start()
 
-
-    def connect(self, timeout):
+    def connect(self, timeout: float) -> bool:
         """
         Try to open the serial port. Retry until timeout expires.
         """
@@ -83,84 +216,31 @@ class SerialInterface:
         print(f"[SerialInterface] Connecting to port '{self.port}'...", end='')
         while time.time() < deadline:
             try:
-                self.serial = serial.Serial(self.port, self.baud_rate, timeout=2)
-                print(f" [OK]")
+                # Special case
+                if self.port == "mock":
+                    self.serial = FakeSerial()
+                else:
+                    self.serial = serial.Serial(self.port, self.baud_rate, timeout=2)
+                print(" [OK]")
                 print(Style.RESET_ALL, end='')
                 return True
-            except (serial.SerialException, OSError) as e:
+            except (serial.SerialException, OSError):
                 print('.', end='')
                 time.sleep(0.2)
 
         print(f" [FAILED] Timeout after {timeout} seconds.")
-        print(f"[SerialInterface] Connection is permanently closed")
+        print("[SerialInterface] Connection is permanently closed")
         print(Style.RESET_ALL, end='')
         self.serial = None
         return False
 
-    def _reader_loop(self):
-        """
-        Asynchronous reader loop, collecting serial data into a buffer
-        """
-        buffer = ""
-        while True:
-            try:
-                if self.serial is not None and self.serial.in_waiting:
-                    char = self.serial.read(1).decode('ascii', errors='ignore')
-                    if char in ['\n', '\r']:
-                        if len(buffer) > 0:
-                            self._handle_line(buffer)
-                            buffer = ""
-                    else:
-                        buffer += char
-                else:
-                    time.sleep(0.001)
-            except (serial.SerialException, OSError) as e:
-                print(Fore.MAGENTA+f"[SerialInterface] Lost connection: {e}"+Style.RESET_ALL)
-                try:
-                    if self.serial is not None and self.serial.is_open:
-                        self.serial.close()
-                except Exception:
-                    pass
-
-                self.serial = None
-                self.connect(self.reconnect_timeout)
-
-    def _handle_line(self, line: str):
-        """
-        Handles a single serial line sent by the device
-        :param line: string containing a single line
-        """
-        with self._lock:
-            log_level, log_msg = self._check_log_msg(line)
-            # print(line)
-            # log message
-            if log_level is not None:
-                if self.log_message_callback: self.log_message_callback(log_level, log_msg)
-            # response
-            elif self._waiting_for_response:
-                line_lower = line.lower()
-                if line_lower.startswith("ok"):
-                    self._response_status = SerialInterface.ReplyStatus.OK
-                elif line_lower.startswith("busy"):
-                    self._response_status = SerialInterface.ReplyStatus.BUSY
-                elif line_lower.startswith("error"):
-                    self._response_status = SerialInterface.ReplyStatus.ERROR
-                    parts = line.split(":", 1)
-                    self._response_error_msg = parts[1].strip() if len(parts) > 1 else ""
-
-                if self._response_status is not None:
-                    self._condition.notify()
-                else:
-                    self._response_string += line + '\n'
-
-            # unsolicited message
-            else:
-                if self.unsolicited_msg_callback: self.unsolicited_msg_callback(line)
-
-    def _check_log_msg(self, msg: str):
+    def _check_log_msg(self, msg: str) -> tuple[LogLevel | None, str]:
         if len(msg) < 2:
             return None, ''
         return self.log_level_prefix_map.get(msg[:2]), msg[2:]
+
+    def _is_serial_open(self):
+        return self.serial is not None and self.serial.is_open
 
     def send_command(self, cmd: str, timeout=2) -> tuple[ReplyStatus, str]:
         """
@@ -169,39 +249,27 @@ class SerialInterface:
         :param timeout: Maximum time to wait for response.
         :return: Tuple containing Status enum (OK | ERROR | TIMEOUT), and response lines.
         """
-        with self._lock:
-            if not self.serial or not self.serial.is_open:
-                return SerialInterface.ReplyStatus.ERROR, 'Serial not open'
+        if self._actor is None:
+            return self.ReplyStatus.ERROR, 'Serial actor not running'
 
-            # Reset state
-            self._waiting_for_response = True
-            self._response_string = ""
-            self._response_error_msg = ""
-            self._response_status = None
+        request = _CommandRequest(cmd=(cmd.strip() + "\n"), timeout_s=timeout)
+        if self.command_msg_callback:
+            self.command_msg_callback(request.cmd, None, '')
 
-            cmd = (cmd.strip() + "\n")
-            self.command_msg_callback(cmd, None, '')
+        self._actor.enqueue(request)
 
-            # Send command
-            self.serial.write(cmd.encode('ascii'))
-            self.serial.flush()
+        # Includes reconnect budget in case the actor is re-establishing the link.
+        wait_s = timeout + max(self.reconnect_timeout, 0.5) + 0.5
+        if not request.done.wait(timeout=wait_s):
+            return self.ReplyStatus.TIMEOUT, request.response_string
 
-            # Wait for completion
-            end_time = time.time() + timeout
-            while self._response_status is None:
-                remaining = end_time - time.time()
-                if remaining <= 0:
-                    self._waiting_for_response = False
-                    print(Fore.MAGENTA + f"[SerialInterface] Command timeout, device didn't reply in time" + Style.RESET_ALL)
-                    return SerialInterface.ReplyStatus.TIMEOUT, self._response_string
-                self._condition.wait(timeout=remaining)
-
-            self._waiting_for_response = False
-            self.command_msg_callback(self._response_string, self._response_status, self._response_error_msg)
-            return self._response_status, self._response_string
+        return request.response_status, request.response_string
 
     def close(self):
         """Closes the serial port."""
+        if self._actor is not None:
+            self._actor.stop()
+            self._actor = None
         if self.serial and self.serial.is_open:
             self.serial.close()
 
@@ -217,7 +285,7 @@ class OpenMicroStageInterface:
     }
 
     def __init__(self, show_communication=True, show_log_messages=True):
-        self.serial = None
+        self.serial: SerialInterface | None = None
         self.workspace_transform = np.eye(4)
         self.workspace_transform_inv = np.linalg.inv(self.workspace_transform)
         self.show_communication = show_communication
@@ -228,7 +296,8 @@ class OpenMicroStageInterface:
         def version_to_str(v):
             return f"v{v[0]}.{v[1]}.{v[2]}"
 
-        if self.serial is not None: self.disconnect()
+        if self.serial is not None:
+            self.disconnect()
         self.serial = SerialInterface(port, baud_rate,
                                       log_msg_callback=self.log_msg_callback,
                                       command_msg_callback=self.command_msg_callback,
@@ -306,7 +375,7 @@ class OpenMicroStageInterface:
         cmd = 'G28'
         axis_chars = ['A', 'B', 'C', 'D', 'E', 'F']
         if axis_list is None:
-            axis_list = [i for i in range(len(axis_chars))]
+            axis_list = list(range(len(axis_chars)))
 
         for axis_idx in axis_list:
             if 0 > axis_idx >= len(axis_chars):
@@ -327,7 +396,8 @@ class OpenMicroStageInterface:
         :return:
         """
         cmd = f"M56 J{joint_index} P"
-        if save_result: cmd += ' S'
+        if save_result:
+            cmd += ' S'
         res, msg = self.serial.send_command(cmd, 30)
 
         calibration_data = self._parse_table_data(msg, 3)
@@ -376,12 +446,14 @@ class OpenMicroStageInterface:
 
     def wait_for_stop(self, polling_interval_ms=10, disable_callbacks=True):
         disable_message_callbacks_prev = self.disable_message_callbacks
-        if disable_callbacks: self.disable_message_callbacks = True
+        if disable_callbacks:
+            self.disable_message_callbacks = True
 
         while True:
             res, msg = self.serial.send_command("M53\n")
-            if res != SerialInterface.ReplyStatus.OK: return res
-            elif msg.strip() == "1":
+            if res != SerialInterface.ReplyStatus.OK:
+                return res
+            if msg.strip() == "1":
                 self.disable_message_callbacks = disable_message_callbacks_prev
                 return SerialInterface.ReplyStatus.OK
             time.sleep(polling_interval_ms*0.001)
@@ -428,7 +500,7 @@ class OpenMicroStageInterface:
         return res
 
     def enable_motors(self, enable):
-        cmd = f"M17" if enable else "M18"
+        cmd = "M17" if enable else "M18"
         res, msg = self.serial.send_command(cmd, timeout=5)
         return res
 

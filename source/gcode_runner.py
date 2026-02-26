@@ -5,10 +5,13 @@
 # Author:  M. S. (diffraction limited)
 # --------------------------------------------------------------------------------------
 
-from hardware.open_micro_stage_api import OpenMicroStageInterface
 import re
-import time
 import threading
+import time
+from collections.abc import Callable
+
+from hardware.open_micro_stage_api import OpenMicroStageInterface
+
 
 class GCodeRunner:
     def __init__(self, gcode: str, oms: OpenMicroStageInterface, max_feedrate, scale=1.0):
@@ -25,9 +28,9 @@ class GCodeRunner:
         self.state = [0.0, 0.0, 0.0, 1.0]  # x, y, z, f
 
         self._running = False
-        self._thread = None
-        self._on_finished = None  # Optional callback
-        self.on_iteration_finished = None  # Optional callback
+        self._thread: threading.Thread | None = None
+        self._on_finished: Callable[[], None] | None = None
+        self.on_iteration_finished: Callable[[], None] | None = None
         self.gcode_scale_factor = 1.0
 
 
@@ -82,7 +85,12 @@ class GCodeRunner:
     def stop(self):
         self._running = False
 
-    def run(self, on_finished=None, on_iteration_finished=None, loop_playback=False):
+    def run(
+        self,
+        on_finished: Callable[[], None] | None = None,
+        on_iteration_finished: Callable[[], None] | None = None,
+        loop_playback: bool = False,
+    ):
         """
         Run G-code processing in a background thread.
         Optionally pass a callback to be called when finished.
@@ -115,4 +123,3 @@ class GCodeRunner:
 
         self._thread = threading.Thread(target=loop, daemon=True)
         self._thread.start()
-

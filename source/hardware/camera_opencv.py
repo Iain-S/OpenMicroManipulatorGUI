@@ -8,9 +8,10 @@
 import cv2
 from hardware.abstract_camera import AbstractCamera
 
+
 class OpenCVCamera(AbstractCamera):
     def __init__(self, camera_index=0):
-        self.cap = cv2.VideoCapture(camera_index)
+        self.cap: cv2.VideoCapture | None = cv2.VideoCapture(camera_index)
         self.grabbing = False
 
         if not self.cap.isOpened():
