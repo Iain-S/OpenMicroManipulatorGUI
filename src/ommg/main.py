@@ -142,15 +142,12 @@ async def _run_camera_loop(camera, gui, pixel_per_mm: float):
 def main():
     args = parse_args()
 
-    # --- configuration -------------------------------------------------------
-    # create interface and connect
     oms = OpenMicroStageInterface(
         show_communication=args.show_communication,
         show_log_messages=args.show_log_messages,
     )
     oms.connect(args.port, args.baud_rate)
 
-    # Setup camera
     if args.camera_backend == "basler":
         from ommg.hardware.camera_basler import BaslerCamera
 
