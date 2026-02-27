@@ -85,7 +85,13 @@ class OpticalAlignment:
         final_brightness = -result.fun
 
         print(f"\n✅ Best position found: {result}, Brightness: {final_brightness:.2f}")
-        self.oms.move_to(*final_pos, self.feed_rate, move_immediately=True)
+        self.oms.move_to(
+            final_pos[0],
+            final_pos[1],
+            final_pos[2],
+            self.feed_rate,
+            move_immediately=True,
+        )
 
         return final_pos, final_brightness
 
@@ -144,7 +150,13 @@ class OpticalAlignment:
         best_brightness = -result.fun  # Negate again to get max brightness
 
         # Optionally move to the best found position
-        self.oms.move_to(*best_position, self.feed_rate, move_immediately=True)
+        self.oms.move_to(
+            best_position[0],
+            best_position[1],
+            best_position[2],
+            self.feed_rate,
+            move_immediately=True,
+        )
 
         return best_position, best_brightness
 

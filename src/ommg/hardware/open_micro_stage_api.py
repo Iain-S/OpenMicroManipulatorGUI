@@ -63,7 +63,7 @@ class _SerialActorThread(QThread):
                 self._start_next_request_if_available()
 
             if self._active_request is not None and time.time() >= self._active_deadline:
-                print(Fore.MAGENTA + "[SerialInterface] Command timeout, device didn't reply in time" + Style.RESET_ALL)
+                print(f"{Fore.MAGENTA}[SerialInterface] Command timeout, device didn't reply in time{Style.RESET_ALL}")
                 self._finish_active_request(SerialInterface.ReplyStatus.TIMEOUT, "")
                 continue
 
@@ -87,9 +87,16 @@ class _SerialActorThread(QThread):
         except queue.Empty:
             return
 
+        serial_port = self.interface.serial
+        if serial_port is None:
+            request.response_status = SerialInterface.ReplyStatus.ERROR
+            request.response_error_msg = "Serial port is not connected"
+            request.done.set()
+            return
+
         try:
-            self.interface.serial.write(request.cmd.encode("ascii"))
-            self.interface.serial.flush()
+            serial_port.write(request.cmd.encode("ascii"))
+            serial_port.flush()
             self._active_request = request
             self._active_deadline = time.time() + request.timeout_s
             self._active_lines = []
@@ -146,7 +153,7 @@ class _SerialActorThread(QThread):
         self._active_lines = []
 
     def _handle_disconnect(self, error: Exception):
-        print(Fore.MAGENTA + f"[SerialInterface] Lost connection: {error}" + Style.RESET_ALL)
+        print(f"{Fore.MAGENTA}[SerialInterface] Lost connection: {error}{Style.RESET_ALL}")
 
         if self._active_request is not None:
             self._finish_active_request(SerialInterface.ReplyStatus.ERROR, str(error))
@@ -266,7 +273,8 @@ class SerialInterface:
         if not request.done.wait(timeout=wait_s):
             return self.ReplyStatus.TIMEOUT, request.response_string
 
-        return request.response_status, request.response_string
+        status = request.response_status or self.ReplyStatus.ERROR
+        return status, request.response_string
 
     def close(self):
         """Closes the serial port."""
@@ -281,7 +289,7 @@ class SerialInterface:
 class OpenMicroStageInterface:
     # Mapping log levels to colors
     LOG_COLORS = {
-        SerialInterface.LogLevel.DEBUG: Fore.WHITE+Style.DIM,
+        SerialInterface.LogLevel.DEBUG: f"{Fore.WHITE}{Style.DIM}",
         SerialInterface.LogLevel.INFO: Style.RESET_ALL,
         SerialInterface.LogLevel.WARNING: Fore.YELLOW,
         SerialInterface.LogLevel.ERROR: Fore.RED,
@@ -309,10 +317,12 @@ class OpenMicroStageInterface:
         self.disable_message_callbacks = True
         fw_version = self.read_firmware_version()
         min_fw_version = (1, 0, 1)
-        print(Fore.MAGENTA + f"Firmware version: {version_to_str(fw_version)}" + Style.RESET_ALL)
+        print(f"{Fore.MAGENTA}Firmware version: {version_to_str(fw_version)}{Style.RESET_ALL}")
         if fw_version < min_fw_version:
-            print(Fore.MAGENTA + f"Firmware version {version_to_str(fw_version)} incompatible. "
-                                 f"At least {version_to_str(min_fw_version)} required" + Style.RESET_ALL)
+            print(
+                f"{Fore.MAGENTA}Firmware version {version_to_str(fw_version)} incompatible. "
+                f"At least {version_to_str(min_fw_version)} required{Style.RESET_ALL}"
+            )
             self.serial = None
         print('')
         self.disable_message_callbacks = False
@@ -335,7 +345,7 @@ class OpenMicroStageInterface:
         else:
             print(f"{color}{msg}{Style.RESET_ALL}")
 
-    def command_msg_callback(self, msg, reply_status: SerialInterface.ReplyStatus, error_msg: str):
+    def command_msg_callback(self, msg, reply_status: SerialInterface.ReplyStatus | None, error_msg: str):
         if not self.show_communication or self.disable_message_callbacks:
             return
 
@@ -348,10 +358,10 @@ class OpenMicroStageInterface:
             else:
                 print(f"{Style.BRIGHT}{str(reply_status.name)} {Style.RESET_ALL}\n")
         else:
-            print(f"{Fore.GREEN+Style.BRIGHT}{msg.rstrip()}{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}{Style.BRIGHT}{msg.rstrip()}{Style.RESET_ALL}")
 
     def unsolicited_msg_callback(self, msg):
-        print(Fore.CYAN+msg+Style.RESET_ALL)
+        print(f"{Fore.CYAN}{msg}{Style.RESET_ALL}")
         pass
 
     def set_workspace_transform(self, transform):
@@ -361,13 +371,22 @@ class OpenMicroStageInterface:
     def get_workspace_transform(self):
         return self.workspace_transform
 
+    def _serial_or_raise(self) -> SerialInterface:
+        if self.serial is None:
+            raise RuntimeError("Serial interface is not connected")
+        return self.serial
+
     def read_firmware_version(self):
-        ok, response = self.serial.send_command("M58")
+        ok, response = self._serial_or_raise().send_command("M58")
         if ok != SerialInterface.ReplyStatus.OK or len(response) == 0:
             return 0, 0, 0
 
-        major, minor, patch = map(int, re.match(r'v(\d+)\.(\d+)\.(\d+)', response).groups())
-        return major,minor,patch
+        version_match = re.match(r'v(\d+)\.(\d+)\.(\d+)', response)
+        if version_match is None:
+            return 0, 0, 0
+
+        major, minor, patch = map(int, version_match.groups())
+        return major, minor, patch
 
     def home(self, axis_list=None):
         """
@@ -385,7 +404,7 @@ class OpenMicroStageInterface:
                 raise ValueError('Axis index out of range')
             cmd += ' '+axis_chars[axis_idx]
 
-        res, msg = self.serial.send_command(cmd + "\n", 10)
+        res, msg = self._serial_or_raise().send_command(cmd + "\n", 10)
         return res
 
     def calibrate_joint(self, joint_index: int, save_result: bool):
@@ -401,7 +420,7 @@ class OpenMicroStageInterface:
         cmd = f"M56 J{joint_index} P"
         if save_result:
             cmd += ' S'
-        res, msg = self.serial.send_command(cmd, 30)
+        res, msg = self._serial_or_raise().send_command(cmd, 30)
 
         calibration_data = self._parse_table_data(msg, 3)
         return res, calibration_data
@@ -428,7 +447,7 @@ class OpenMicroStageInterface:
 
         # resend messages if queue is full
         while True:
-            res, msg = self.serial.send_command(cmd + "\n", timeout=timeout)
+            res, msg = self._serial_or_raise().send_command(cmd + "\n", timeout=timeout)
             if res != SerialInterface.ReplyStatus.BUSY or not blocking:
                 return res
 
@@ -436,7 +455,7 @@ class OpenMicroStageInterface:
         cmd = f"G4 S{time_s:.6f}\n"
         # resend messages if queue is full
         while True:
-            res, msg = self.serial.send_command(cmd + "\n", timeout=timeout)
+            res, msg = self._serial_or_raise().send_command(cmd + "\n", timeout=timeout)
             if res != SerialInterface.ReplyStatus.BUSY or not blocking:
                 return res
 
@@ -444,7 +463,7 @@ class OpenMicroStageInterface:
         linear_accel = max(linear_accel, 0.01)
         angular_accel = max(angular_accel, 0.01)
         cmd = f"M204 L{linear_accel:.6f} A{angular_accel:.6f}\n"
-        res, msg = self.serial.send_command(cmd)
+        res, msg = self._serial_or_raise().send_command(cmd)
         return res
 
     def wait_for_stop(self, polling_interval_ms=10, disable_callbacks=True):
@@ -453,7 +472,7 @@ class OpenMicroStageInterface:
             self.disable_message_callbacks = True
 
         while True:
-            res, msg = self.serial.send_command("M53\n")
+            res, msg = self._serial_or_raise().send_command("M53\n")
             if res != SerialInterface.ReplyStatus.OK:
                 return res
             if msg.strip() == "1":
@@ -468,7 +487,7 @@ class OpenMicroStageInterface:
         Reads the current position of the dives EXCLUDING the workspace transform.
         If you want to use the result with a
         """
-        ok, response = self.serial.send_command("M50")
+        ok, response = self._serial_or_raise().send_command("M50")
         if ok != SerialInterface.ReplyStatus.OK or len(response) == 0:
             return None, None, None
 
@@ -488,23 +507,23 @@ class OpenMicroStageInterface:
         return float(x), float(y), float(z)
 
     def read_encoder_angles(self):
-        ok, response = self.serial.send_command("M51")
+        ok, response = self._serial_or_raise().send_command("M51")
         if ok != SerialInterface.ReplyStatus.OK or len(response) == 0:
             return []
         return []
 
     def read_device_state_info(self):
-        res, msg = self.serial.send_command("M57")
+        res, msg = self._serial_or_raise().send_command("M57")
         return res
 
     def set_servo_parameter(self, pos_kp=150, pos_ki=50000, vel_kp=0.2, vel_ki=100, vel_filter_tc=0.0025):
         cmd = f"M55 A{pos_kp:.6f} B{pos_ki:.6f} C{vel_kp:.6f} D{vel_ki:.6f} F{vel_filter_tc:.6f}"
-        res, msg = self.serial.send_command(cmd)
+        res, msg = self._serial_or_raise().send_command(cmd)
         return res
 
     def enable_motors(self, enable):
         cmd = "M17" if enable else "M18"
-        res, msg = self.serial.send_command(cmd, timeout=5)
+        res, msg = self._serial_or_raise().send_command(cmd, timeout=5)
         return res
 
     def set_pose(self, x, y, z):
@@ -513,11 +532,11 @@ class OpenMicroStageInterface:
         x_t, y_t, z_t = transformed[:3] / transformed[3]
 
         cmd = f"G24 X{x_t:.6f} Y{y_t:.6f} Z{z_t:.6f}" # TODO: A, B ,C
-        res, msg = self.serial.send_command(cmd)
+        res, msg = self._serial_or_raise().send_command(cmd)
         return res
 
     def send_command(self, cmd: str, timeout_s: float=5):
-        res, msg = self.serial.send_command(cmd, timeout_s)
+        res, msg = self._serial_or_raise().send_command(cmd, timeout_s)
         return res, msg
 
     @staticmethod

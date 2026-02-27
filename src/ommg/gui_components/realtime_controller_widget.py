@@ -228,11 +228,11 @@ class RealtimeControllerWidget(QWidget):
                 return self.handle_mouse_wheel(event)
             elif event.type() == QEvent.Type.KeyPress:
                 return self.handle_key_press(event)
-            elif event.type() == QEvent.Type.MouseButtonPress:
+            elif event.type() == QEvent.Type.MouseButtonPress and isinstance(event, QMouseEvent):
                 return self.handle_mouse_press(event)
-            elif event.type() == QEvent.Type.MouseButtonDblClick:
+            elif event.type() == QEvent.Type.MouseButtonDblClick and isinstance(event, QMouseEvent):
                 return self.handle_mouse_press(event)
-            elif event.type() == QEvent.Type.MouseButtonRelease:
+            elif event.type() == QEvent.Type.MouseButtonRelease and isinstance(event, QMouseEvent):
                 return self.handle_mouse_release(event)
             elif event.type() == QEvent.Type.Leave:
                 self.constrain_cursor()

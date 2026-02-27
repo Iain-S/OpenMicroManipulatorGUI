@@ -5,7 +5,7 @@ description = "Add your description here"
 authors = [
     { name = "Iain-S", email = "25081046+Iain-S@users.noreply.github.com" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "colorama",
     "numpy",
@@ -15,6 +15,7 @@ dependencies = [
     "pyside6",
     "qasync",
     "scikit-optimize",
+    "pypylon",
 ]
 
 [project.scripts]
@@ -64,3 +65,16 @@ ignore = [
 # [tool.ruff.lint.flake8-tidy-imports]
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
+
+[tool.ty.environment]
+python-version = "3.13"
+
+[tool.ty.rules]
+unresolved-attribute = "error"
+invalid-argument-type = "error"
+unsupported-operator = "error"
+too-many-positional-arguments = "error"
+parameter-already-assigned = "error"
+invalid-return-type = "error"
+call-non-callable = "error"
+unresolved-import = "error"

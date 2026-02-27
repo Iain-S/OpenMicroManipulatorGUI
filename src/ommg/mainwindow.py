@@ -76,6 +76,7 @@ class DeviceControlMainWindow(QMainWindow):
         left_panel = QWidget()
         left_panel.setFixedWidth(350)
         main_layout = QVBoxLayout(left_panel)  # This replaces your old main_layout
+        self.control_layout = main_layout
 
         self.video_viewer = ImageViewerWidget()
 
@@ -468,7 +469,12 @@ class DeviceControlMainWindow(QMainWindow):
         d = self.step_sizes[self.step_size_idx]
         self.current_pos[axis] += direction * d * flipped[axis]
         self.current_pos[axis] = max(min(self.current_pos[axis], 10), -10)
-        self.oms.move_to(*self.current_pos, self.feedrates[self.step_size_idx])
+        self.oms.move_to(
+            self.current_pos[0],
+            self.current_pos[1],
+            self.current_pos[2],
+            self.feedrates[self.step_size_idx],
+        )
 
     def move_axis_from_keyboard(self, axis, direction):
         self.move_axis(axis, direction)
@@ -555,7 +561,12 @@ class DeviceControlMainWindow(QMainWindow):
     def update_controller(self, frame, vis_image, pixel_per_mm):
         if self.waypoint_idx <= len(self.waypoints) and len(self.waypoints) > 0:
             self.current_pos[:], f = self.waypoints[self.waypoint_idx % len(self.waypoints)]
-            self.oms.move_to(*self.current_pos, f)
+            self.oms.move_to(
+                self.current_pos[0],
+                self.current_pos[1],
+                self.current_pos[2],
+                f,
+            )
             self.oms.dwell(0.1, False)
             self.waypoint_idx += 1
         else:

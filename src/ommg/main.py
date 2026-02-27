@@ -43,6 +43,9 @@ from ommg.hardware.open_micro_stage_api import OpenMicroStageInterface
 from ommg.mainwindow import DeviceControlMainWindow
 
 EXPOSURE_TIME_US = 16_000
+MOCK_VIEWPORT_SCALE_DEFAULT = 0.45
+MOCK_XY_MM_TO_PX_DEFAULT = 140.0
+MOCK_Z_MM_TO_SCALE_DEFAULT = 0.05
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,9 +61,24 @@ def build_parser() -> argparse.ArgumentParser:
         default=True,
         help="Enable mock robot viewport camera wrapper",
     )
-    parser.add_argument("--mock-viewport-scale", type=float, default=0.45)
-    parser.add_argument("--mock-xy-mm-to-px", type=float, default=140.0)
-    parser.add_argument("--mock-z-mm-to-scale", type=float, default=0.05)
+    parser.add_argument(
+        "--mock-viewport-scale",
+        type=float,
+        default=None,
+        help="Mock camera viewport crop scale (requires --use-mock-camera)",
+    )
+    parser.add_argument(
+        "--mock-xy-mm-to-px",
+        type=float,
+        default=None,
+        help="Mock camera XY mm-to-pixel factor (requires --use-mock-camera)",
+    )
+    parser.add_argument(
+        "--mock-z-mm-to-scale",
+        type=float,
+        default=None,
+        help="Mock camera Z-to-zoom factor (requires --use-mock-camera)",
+    )
     parser.add_argument("--pixel-per-mm", type=float, default=2000.0)
     parser.add_argument(
         "--show-communication",
@@ -75,6 +93,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print device log messages",
     )
     return parser
+
+
+def parse_args() -> argparse.Namespace:
+    parser = build_parser()
+    args = parser.parse_args()
+
+    incompatible_mock_flags: list[str] = []
+    if not args.use_mock_camera:
+        if args.mock_viewport_scale is not None:
+            incompatible_mock_flags.append("--mock-viewport-scale")
+        if args.mock_xy_mm_to_px is not None:
+            incompatible_mock_flags.append("--mock-xy-mm-to-px")
+        if args.mock_z_mm_to_scale is not None:
+            incompatible_mock_flags.append("--mock-z-mm-to-scale")
+
+    if incompatible_mock_flags:
+        parser.error(
+            "incompatible arguments: "
+            f"{', '.join(incompatible_mock_flags)} cannot be used with --no-use-mock-camera"
+        )
+
+    return args
 
 
 def _to_vis_image(frame):
@@ -100,7 +140,7 @@ async def _run_camera_loop(camera, gui, pixel_per_mm: float):
 
 
 def main():
-    args = build_parser().parse_args()
+    args = parse_args()
 
     # --- configuration -------------------------------------------------------
     # create interface and connect
@@ -123,9 +163,12 @@ def main():
         camera = MockRobotViewportCamera(
             source_camera=base_camera,
             oms=oms,
-            viewport_scale=args.mock_viewport_scale,
-            xy_mm_to_px=args.mock_xy_mm_to_px,
-            z_mm_to_scale=args.mock_z_mm_to_scale,
+            viewport_scale=args.mock_viewport_scale
+            if args.mock_viewport_scale is not None else MOCK_VIEWPORT_SCALE_DEFAULT,
+            xy_mm_to_px=args.mock_xy_mm_to_px
+            if args.mock_xy_mm_to_px is not None else MOCK_XY_MM_TO_PX_DEFAULT,
+            z_mm_to_scale=args.mock_z_mm_to_scale
+            if args.mock_z_mm_to_scale is not None else MOCK_Z_MM_TO_SCALE_DEFAULT,
         )
     else:
         camera = base_camera
