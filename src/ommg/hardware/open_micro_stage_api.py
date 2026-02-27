@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # --------------------------------------------------------------------------------------
 # Project: OpenMicroManipulator
 # License: MIT (see LICENSE file for full description)
@@ -27,12 +29,12 @@ class _CommandRequest:
     timeout_s: float
     done: threading.Event = field(default_factory=threading.Event)
     response_string: str = ""
-    response_status: "SerialInterface.ReplyStatus" | None = None
+    response_status: SerialInterface.ReplyStatus | None = None
     response_error_msg: str = ""
 
 
 class _SerialActorThread(QThread):
-    def __init__(self, interface: "SerialInterface"):
+    def __init__(self, interface: SerialInterface):
         super().__init__()
         self.interface: SerialInterface = interface
         self._stop_event = threading.Event()
@@ -122,7 +124,7 @@ class _SerialActorThread(QThread):
         else:
             self._active_lines.append(line)
 
-    def _finish_active_request(self, status: "SerialInterface.ReplyStatus", error_msg: str):
+    def _finish_active_request(self, status: SerialInterface.ReplyStatus, error_msg: str):
         request = self._active_request
         if request is None:
             return

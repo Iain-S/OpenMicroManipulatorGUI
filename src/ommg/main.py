@@ -4,18 +4,38 @@
 #          All text in here must be included in any redistribution.
 # Author:  M. S. (diffraction limited)
 # --------------------------------------------------------------------------------------
+# ruff: noqa: I001, E402
 
 import argparse
+import asyncio
 import os
 
-# Disable scaling
-os.environ['QT_SCALE_FACTOR'] = '1'
-os.environ['QT_AUTO_SCREEN_SCALE_FACTOR'] = '0'
-os.environ['GDK_SCALE'] = '1'
-os.environ['GDK_DPI_SCALE'] = '1'
+# Scale-related defaults. We preserve explicit user/system values.
+SCALING_ENV_DEFAULTS = {
+    "QT_SCALE_FACTOR": "1",
+    "QT_AUTO_SCREEN_SCALE_FACTOR": "0",
+    "GDK_SCALE": "1",
+    "GDK_DPI_SCALE": "1",
+}
+
+
+def _configure_scaling_env() -> None:
+    for key, default in SCALING_ENV_DEFAULTS.items():
+        existing = os.environ.get(key)
+        if existing is None:
+            os.environ[key] = default
+        elif existing != default:
+            print(
+                f"[main] Warning: preserving existing {key}={existing!r}; "
+                f"default would be {default!r}"
+            )
+
+
+_configure_scaling_env()
 
 import cv2
 from PySide6.QtWidgets import QApplication
+from qasync import QEventLoop
 
 from ommg.hardware.camera_mock_robot import MockRobotViewportCamera
 from ommg.hardware.camera_opencv import OpenCVCamera
@@ -23,6 +43,7 @@ from ommg.hardware.open_micro_stage_api import OpenMicroStageInterface
 from ommg.mainwindow import DeviceControlMainWindow
 
 EXPOSURE_TIME_US = 16_000
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Open Micro-Manipulator GUI")
@@ -56,6 +77,28 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _to_vis_image(frame):
+    if len(frame.shape) == 2 or frame.shape[2] == 1:
+        return cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+    return frame.copy()
+
+
+async def _run_camera_loop(camera, gui, pixel_per_mm: float):
+    camera.start_grabbing(single_grab=False)
+    try:
+        while gui.isVisible() and camera.is_connected():
+            frame = camera.grab_one(timeout_ms=100)
+            if frame is None:
+                await asyncio.sleep(0.005)
+                continue
+
+            vis_img = _to_vis_image(frame)
+            gui.update_controller(frame, vis_img, pixel_per_mm=pixel_per_mm)
+            await asyncio.sleep(0)
+    finally:
+        camera.stop_grabbing()
+
+
 def main():
     args = build_parser().parse_args()
 
@@ -76,7 +119,6 @@ def main():
         base_camera = OpenCVCamera(camera_index=args.camera_index)
 
     base_camera.set_exposure_time(args.exposure_us)
-    camera = base_camera
     if args.use_mock_camera:
         camera = MockRobotViewportCamera(
             source_camera=base_camera,
@@ -85,35 +127,23 @@ def main():
             xy_mm_to_px=args.mock_xy_mm_to_px,
             z_mm_to_scale=args.mock_z_mm_to_scale,
         )
+    else:
+        camera = base_camera
 
-    # ------------------------------------------------------------------------
-
-    # create the Qt app and GUI
     app = QApplication()
     gui = DeviceControlMainWindow(oms, camera)
     gui.show()
 
-    def process_frame(frame):
-        #frame = cv2.flip(frame, 1)
+    loop = QEventLoop(app)
+    asyncio.set_event_loop(loop)
 
-        # Convert grayscale to BGR if needed
-        if len(frame.shape) == 2 or frame.shape[2] == 1:
-            vis_img = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-        else:
-            vis_img = frame.copy()
-
-        gui.update_controller(frame, vis_img, pixel_per_mm=args.pixel_per_mm)
-
-        app.processEvents()
-        a = gui.isVisible()
-        return a
+    app.aboutToQuit.connect(loop.stop)
 
     if camera.is_connected():
-        # Run the camera loop (which also runs qt event loop)
-        camera.grab_loop(callback=process_frame)
-    else:
-        # Start the Qt event loop
-        app.exec()
+        loop.create_task(_run_camera_loop(camera, gui, pixel_per_mm=args.pixel_per_mm))
+
+    with loop:
+        loop.run_forever()
 
 if __name__ == "__main__":
     main()

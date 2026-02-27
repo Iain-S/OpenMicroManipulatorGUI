@@ -13,6 +13,7 @@ dependencies = [
     "opencv-python",
     "pyserial",
     "pyside6",
+    "qasync",
     "scikit-optimize",
 ]
 
