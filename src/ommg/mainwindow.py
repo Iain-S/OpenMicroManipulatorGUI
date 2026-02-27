@@ -6,12 +6,12 @@
 # --------------------------------------------------------------------------------------
 
 import json
-from typing import Any
+from typing import Any, Callable
 
 import cv2
 import numpy as np
 from PySide6.QtCore import QMargins, Qt, QTimer
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QCloseEvent, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDoubleSpinBox,
@@ -53,6 +53,7 @@ class DeviceControlMainWindow(QMainWindow):
         self.waypoints = []
         self.waypoint_idx = 1000000
         self.move_buttons: dict[tuple[int, int], QPushButton] = {}
+        self.keyboard_shortcuts: list[QShortcut] = []
 
         # Trackers
         self.image_point_tracker = ImagePointTracker()
@@ -75,6 +76,7 @@ class DeviceControlMainWindow(QMainWindow):
         left_panel = QWidget()
         left_panel.setFixedWidth(350)
         main_layout = QVBoxLayout(left_panel)  # This replaces your old main_layout
+        self.control_layout = main_layout
 
         self.video_viewer = ImageViewerWidget()
 
@@ -85,8 +87,11 @@ class DeviceControlMainWindow(QMainWindow):
         grid.setSpacing(10)
 
         btn_y_neg = self.create_button("Y-", lambda: self.move_axis(1, -1), font)
+        btn_y_neg.setToolTip("Move stage in -Y by the selected step size (shortcut: W or Up).")
         btn_z_pos = self.create_button("Z+", lambda: self.move_axis(2, +1), font)
+        btn_z_pos.setToolTip("Move stage in +Z by the selected step size.")
         btn_x_neg = self.create_button("X-", lambda: self.move_axis(0, -1), font)
+        btn_x_neg.setToolTip("Move stage in -X by the selected step size (shortcut: A or Left).")
         grid.addWidget(btn_y_neg, 0, 1)
         grid.addWidget(btn_z_pos, 0, 3)
         grid.addWidget(btn_x_neg, 1, 0)
@@ -97,8 +102,11 @@ class DeviceControlMainWindow(QMainWindow):
         grid.addWidget(center_label, 1, 1)
 
         btn_x_pos = self.create_button("X+", lambda: self.move_axis(0, +1), font)
+        btn_x_pos.setToolTip("Move stage in +X by the selected step size (shortcut: D or Right).")
         btn_y_pos = self.create_button("Y+", lambda: self.move_axis(1, +1), font)
+        btn_y_pos.setToolTip("Move stage in +Y by the selected step size (shortcut: S or Down).")
         btn_z_neg = self.create_button("Z-", lambda: self.move_axis(2, -1), font)
+        btn_z_neg.setToolTip("Move stage in -Z by the selected step size.")
         grid.addWidget(btn_x_pos, 1, 2)
         grid.addWidget(btn_y_pos, 2, 1)
         grid.addWidget(btn_z_neg, 2, 3)
@@ -124,6 +132,7 @@ class DeviceControlMainWindow(QMainWindow):
         for i, val in enumerate(self.step_sizes):
             btn = self.create_button(str(val * 1000), lambda checked=False, idx=i: self.set_step_size(idx), font)
             btn.setCheckable(True)
+            btn.setToolTip(f"Set movement step size to {val * 1000:g} um.")
             if i == self.step_size_idx:
                 btn.setChecked(True)
             self.step_button_group.addButton(btn, i)
@@ -141,6 +150,7 @@ class DeviceControlMainWindow(QMainWindow):
             decimals=2,
             callback=lambda: self.oms.set_max_acceleration(self.accel_spinbox.value(), 5000)
         )
+        self.accel_spinbox.setToolTip("Set maximum acceleration used by stage motion commands.")
         main_layout.addLayout(accel_layout)
 
         # Waypoint controls
@@ -149,10 +159,18 @@ class DeviceControlMainWindow(QMainWindow):
         main_layout.addWidget(self.waypoint_info_label)
 
         wp_layout = QGridLayout()
-        wp_layout.addWidget(self.create_button("Add Waypoint", self.add_waypoint, font), 0, 0)
-        wp_layout.addWidget(self.create_button("Clear Waypoints", self.clear_waypoints, font), 0, 1)
-        wp_layout.addWidget(self.create_button("Run Path", self.run_path, font), 1, 0)
-        wp_layout.addWidget(self.create_button("Save Path", self.save_path, font), 1, 1)
+        add_wp_btn = self.create_button("Add Waypoint", self.add_waypoint, font)
+        add_wp_btn.setToolTip("Add the current pose to the waypoint list (shortcut: R).")
+        clear_wp_btn = self.create_button("Clear Waypoints", self.clear_waypoints, font)
+        clear_wp_btn.setToolTip("Remove all saved waypoints.")
+        run_path_btn = self.create_button("Run Path", self.run_path, font)
+        run_path_btn.setToolTip("Begin waypoint playback loop.")
+        save_path_btn = self.create_button("Save Path", self.save_path, font)
+        save_path_btn.setToolTip("Export waypoints as a G-code file.")
+        wp_layout.addWidget(add_wp_btn, 0, 0)
+        wp_layout.addWidget(clear_wp_btn, 0, 1)
+        wp_layout.addWidget(run_path_btn, 1, 0)
+        wp_layout.addWidget(save_path_btn, 1, 1)
         main_layout.addLayout(wp_layout)
 
         # self.waypoint_info_label = self.create_label("", font_size=10)
@@ -177,18 +195,35 @@ class DeviceControlMainWindow(QMainWindow):
         self.realtime_control_widget.stop_control_signal.connect(self.on_stop_realtime_control)
 
         self.run_gcode_button = self.create_button("Run GCode", self.run_gcode_from_file, font)
+        self.run_gcode_button.setToolTip("Load and execute a G-code file. Toggle again to stop.")
         self.run_gcode_button.setCheckable(True)
         layout.addWidget(self.run_gcode_button, 2, 0, 1, 2)
         layout.addItem(QSpacerItem(0, 10, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed), 3, 0, 1, 2)
 
-        layout.addWidget(self.create_button("3-Point Alignment", self.run_3point_alignment, font), 4, 0)
-        layout.addWidget(self.create_button("Set Origin", lambda: self.set_origin(), font), 4, 1)
-        layout.addWidget(self.create_button("Set Tracking Point", self.set_tracking_point, font), 5, 0)
-        layout.addWidget(self.create_button("Clear", self.clear_draw_buffer, font), 5, 1)
-        layout.addWidget(self.create_button("Load Transform", self.load_transform, font), 6, 0)
-        layout.addWidget(self.create_button("Save Transform", self.save_transform, font), 6, 1)
-        layout.addWidget(self.create_button("Fiber Alignment", self.run_fiber_alignment, font), 7, 0)
-        layout.addWidget(self.create_button("Home", self.home, font), 7, 1)
+        align3_btn = self.create_button("3-Point Alignment", self.run_3point_alignment, font)
+        align3_btn.setToolTip("Build a workspace transform from exactly three recorded waypoints.")
+        set_origin_btn = self.create_button("Set Origin", lambda: self.set_origin(), font)
+        set_origin_btn.setToolTip("Set the current pose as the workspace origin.")
+        set_track_btn = self.create_button("Set Tracking Point", self.set_tracking_point, font)
+        set_track_btn.setToolTip("Track the current image center in the camera view.")
+        clear_btn = self.create_button("Clear", self.clear_draw_buffer, font)
+        clear_btn.setToolTip("Clear path overlay and reset image tracking.")
+        load_t_btn = self.create_button("Load Transform", self.load_transform, font)
+        load_t_btn.setToolTip("Load workspace transform from transform.json.")
+        save_t_btn = self.create_button("Save Transform", self.save_transform, font)
+        save_t_btn.setToolTip("Save current workspace transform to transform.json.")
+        fiber_btn = self.create_button("Fiber Alignment", self.run_fiber_alignment, font)
+        fiber_btn.setToolTip("Run fiber alignment routine (if implemented).")
+        home_btn = self.create_button("Home", self.home, font)
+        home_btn.setToolTip("Home all axes and refresh displayed position.")
+        layout.addWidget(align3_btn, 4, 0)
+        layout.addWidget(set_origin_btn, 4, 1)
+        layout.addWidget(set_track_btn, 5, 0)
+        layout.addWidget(clear_btn, 5, 1)
+        layout.addWidget(load_t_btn, 6, 0)
+        layout.addWidget(save_t_btn, 6, 1)
+        layout.addWidget(fiber_btn, 7, 0)
+        layout.addWidget(home_btn, 7, 1)
         self._add_mock_camera_controls(layout, start_row=8)
         main_layout.addWidget(advanced_frame)
 
@@ -199,12 +234,16 @@ class DeviceControlMainWindow(QMainWindow):
         self.video_viewer.setMinimumWidth(600)
         self.video_viewer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_viewer.setStyleSheet("background-color: black; border: 2px solid #444;")
+        self.video_viewer.setToolTip("Live camera feed. Realtime mouse control acts on this viewport.")
 
         # Add components to the horizontal layout
         main_h_layout.addWidget(left_panel)
         main_h_layout.addWidget(self.video_viewer, stretch=1)
 
         self.set_stylesheet()
+        self._setup_keyboard_shortcuts()
+        QTimer.singleShot(0, self._set_initial_focus_for_keyboard)
+        self.statusBar().showMessage("Keyboard controls: WASD or arrow keys to move, R to add waypoint.", 6000)
 
     def setup_movement_grid(self):
         font = QFont("Noto Sans", 12)
@@ -257,6 +296,7 @@ class DeviceControlMainWindow(QMainWindow):
         self.mock_cam_scale_spin.setSingleStep(0.01)
         self.mock_cam_scale_spin.setDecimals(2)
         self.mock_cam_scale_spin.setValue(float(params["viewport_scale"]))
+        self.mock_cam_scale_spin.setToolTip("Fraction of source image used for viewport crop.")
         self.mock_cam_scale_spin.valueChanged.connect(self._on_mock_camera_param_changed)
 
         self.mock_cam_xy_spin = QDoubleSpinBox()
@@ -264,6 +304,7 @@ class DeviceControlMainWindow(QMainWindow):
         self.mock_cam_xy_spin.setSingleStep(5.0)
         self.mock_cam_xy_spin.setDecimals(1)
         self.mock_cam_xy_spin.setValue(float(params["xy_mm_to_px"]))
+        self.mock_cam_xy_spin.setToolTip("How strongly XY robot motion shifts the viewport (pixels per mm).")
         self.mock_cam_xy_spin.valueChanged.connect(self._on_mock_camera_param_changed)
 
         self.mock_cam_z_spin = QDoubleSpinBox()
@@ -271,6 +312,7 @@ class DeviceControlMainWindow(QMainWindow):
         self.mock_cam_z_spin.setSingleStep(0.01)
         self.mock_cam_z_spin.setDecimals(2)
         self.mock_cam_z_spin.setValue(float(params["z_mm_to_scale"]))
+        self.mock_cam_z_spin.setToolTip("How strongly Z motion changes viewport zoom.")
         self.mock_cam_z_spin.valueChanged.connect(self._on_mock_camera_param_changed)
 
         layout.addWidget(label_scale, start_row + 2, 0)
@@ -334,6 +376,28 @@ class DeviceControlMainWindow(QMainWindow):
         btn.clicked.connect(slot)
         #        btn.setStyleSheet()
         return btn
+
+    def _setup_keyboard_shortcuts(self):
+        key_bindings: list[tuple[str, Callable[[], None]]] = [
+            ("A", lambda: self.move_axis_from_keyboard(0, -1)),
+            ("Left", lambda: self.move_axis_from_keyboard(0, -1)),
+            ("D", lambda: self.move_axis_from_keyboard(0, +1)),
+            ("Right", lambda: self.move_axis_from_keyboard(0, +1)),
+            ("W", lambda: self.move_axis_from_keyboard(1, -1)),
+            ("Up", lambda: self.move_axis_from_keyboard(1, -1)),
+            ("S", lambda: self.move_axis_from_keyboard(1, +1)),
+            ("Down", lambda: self.move_axis_from_keyboard(1, +1)),
+            ("R", self.add_waypoint),
+        ]
+        for key, slot in key_bindings:
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+            shortcut.activated.connect(slot)
+            self.keyboard_shortcuts.append(shortcut)
+
+    def _set_initial_focus_for_keyboard(self):
+        self.video_viewer.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.video_viewer.setFocus()
 
     def set_stylesheet(self):
         self.setStyleSheet("""
@@ -405,7 +469,12 @@ class DeviceControlMainWindow(QMainWindow):
         d = self.step_sizes[self.step_size_idx]
         self.current_pos[axis] += direction * d * flipped[axis]
         self.current_pos[axis] = max(min(self.current_pos[axis], 10), -10)
-        self.oms.move_to(*self.current_pos, self.feedrates[self.step_size_idx])
+        self.oms.move_to(
+            self.current_pos[0],
+            self.current_pos[1],
+            self.current_pos[2],
+            self.feedrates[self.step_size_idx],
+        )
 
     def move_axis_from_keyboard(self, axis, direction):
         self.move_axis(axis, direction)
@@ -492,7 +561,12 @@ class DeviceControlMainWindow(QMainWindow):
     def update_controller(self, frame, vis_image, pixel_per_mm):
         if self.waypoint_idx <= len(self.waypoints) and len(self.waypoints) > 0:
             self.current_pos[:], f = self.waypoints[self.waypoint_idx % len(self.waypoints)]
-            self.oms.move_to(*self.current_pos, f)
+            self.oms.move_to(
+                self.current_pos[0],
+                self.current_pos[1],
+                self.current_pos[2],
+                f,
+            )
             self.oms.dwell(0.1, False)
             self.waypoint_idx += 1
         else:
@@ -620,15 +694,26 @@ class DeviceControlMainWindow(QMainWindow):
         json.dump(T.tolist(), open("transform.json", "w"))
 
     def keyPressEvent(self, event):
-        if event.key() in (Qt.Key.Key_A, Qt.Key.Key_Left):
-            self.move_axis_from_keyboard(0, -1)
-        elif event.key() in (Qt.Key.Key_D, Qt.Key.Key_Right):
-            self.move_axis_from_keyboard(0, +1)
-        elif event.key() in (Qt.Key.Key_W, Qt.Key.Key_Up):
-            self.move_axis_from_keyboard(1, -1)
-        elif event.key() in (Qt.Key.Key_S, Qt.Key.Key_Down):
-            self.move_axis_from_keyboard(1, +1)
-        elif event.key() == Qt.Key.Key_R:
-            self.add_waypoint()
-        else:
-            super().keyPressEvent(event)
+        super().keyPressEvent(event)
+
+    def closeEvent(self, event: QCloseEvent):
+        # Ensure worker threads are stopped before Qt destroys objects.
+        try:
+            if self.realtime_control_widget is not None:
+                self.realtime_control_widget.stop_control()
+        except Exception:
+            pass
+
+        try:
+            if self.gcode_runner is not None:
+                self.gcode_runner.stop()
+        except Exception:
+            pass
+
+        try:
+            if self.oms is not None:
+                self.oms.disconnect()
+        except Exception:
+            pass
+
+        super().closeEvent(event)

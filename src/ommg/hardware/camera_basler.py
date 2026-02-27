@@ -78,6 +78,8 @@ class BaslerCamera(AbstractCamera):
         """
         if not self.camera:
             return None
+        if self.converter is None:
+            return None
 
         try:
             self.camera.TriggerSoftware.Execute()
@@ -99,6 +101,8 @@ class BaslerCamera(AbstractCamera):
         """
         if not self.camera:
             return None
+        if self.converter is None:
+            return None
 
         try:
             result = self.camera.GrabOne(timeout_ms, pylon.TimeoutHandling_ThrowException)
@@ -117,6 +121,8 @@ class BaslerCamera(AbstractCamera):
         Stops if callback returns False.
         """
         if not self.camera:
+            return
+        if self.converter is None:
             return
 
         self.start_grabbing(single_grab=False)

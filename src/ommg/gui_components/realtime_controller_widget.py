@@ -120,6 +120,9 @@ class RealtimeControllerWidget(QWidget):
     def setup_ui(self):
         self.mouse_control_button = QPushButton("Realtime Mouse Control")
         self.mouse_control_button.setCheckable(True)
+        self.mouse_control_button.setToolTip(
+            "Toggle realtime mouse-driven control. ESC exits control mode."
+        )
         self.mouse_control_button.setSizePolicy(
             QSizePolicy.Policy.Preferred,
             QSizePolicy.Policy.Expanding
@@ -128,8 +131,10 @@ class RealtimeControllerWidget(QWidget):
 
         self.spinbox_xy_range = QDoubleSpinBox()
         self.spinbox_xy_range.setValue(0.5)
+        self.spinbox_xy_range.setToolTip("Max XY offset in mm while realtime control is active.")
         self.spinbox_z_range = QDoubleSpinBox()
         self.spinbox_z_range.setValue(0.0)
+        self.spinbox_z_range.setToolTip("Max Z offset in mm; mouse wheel adjusts Z.")
 
         label1 = QLabel("XY-Range")
         label1.setAlignment(Qt.AlignmentFlag.AlignRight)
@@ -223,11 +228,11 @@ class RealtimeControllerWidget(QWidget):
                 return self.handle_mouse_wheel(event)
             elif event.type() == QEvent.Type.KeyPress:
                 return self.handle_key_press(event)
-            elif event.type() == QEvent.Type.MouseButtonPress:
+            elif event.type() == QEvent.Type.MouseButtonPress and isinstance(event, QMouseEvent):
                 return self.handle_mouse_press(event)
-            elif event.type() == QEvent.Type.MouseButtonDblClick:
+            elif event.type() == QEvent.Type.MouseButtonDblClick and isinstance(event, QMouseEvent):
                 return self.handle_mouse_press(event)
-            elif event.type() == QEvent.Type.MouseButtonRelease:
+            elif event.type() == QEvent.Type.MouseButtonRelease and isinstance(event, QMouseEvent):
                 return self.handle_mouse_release(event)
             elif event.type() == QEvent.Type.Leave:
                 self.constrain_cursor()

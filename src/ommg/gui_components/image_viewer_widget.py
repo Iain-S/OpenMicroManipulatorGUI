@@ -26,17 +26,17 @@ class ImageViewerWidget(QGraphicsView):
         self._image_size = (0, 0)
 
         # 2. Appearance & Rendering
-        self.setBackgroundBrush(Qt.black)
-        self.setFrameShape(QGraphicsView.NoFrame)
-        self.setRenderHint(QPainter.SmoothPixmapTransform, False)
-        self.setRenderHint(QPainter.Antialiasing, True)
-        self.setRenderHint(QPainter.TextAntialiasing, True)
-        self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+        self.setBackgroundBrush(Qt.GlobalColor.black)
+        self.setFrameShape(QGraphicsView.Shape.NoFrame)
+        self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
+        self.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        self.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
 
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
-        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setInteractive(True)
 
         # Enable key focus so we can catch key events
@@ -45,7 +45,7 @@ class ImageViewerWidget(QGraphicsView):
     def set_image(self, cv_img, pixel_per_mm):
         height, width, channel = cv_img.shape
         bytes_per_line = channel * width
-        q_img = QImage(cv_img.data, width, height, bytes_per_line, QImage.Format_RGB888)
+        q_img = QImage(cv_img.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
 
         self.pixel_per_mm = pixel_per_mm
         self._pixmap_item.setPixmap(QPixmap.fromImage(q_img))
@@ -115,7 +115,14 @@ class ImageViewerWidget(QGraphicsView):
         y_start = view_h - margin
 
         # 5. Drawing
-        painter.setPen(QPen(Qt.white, 2, Qt.SolidLine, Qt.FlatCap))
+        painter.setPen(
+            QPen(
+                Qt.GlobalColor.white,
+                2,
+                Qt.PenStyle.SolidLine,
+                Qt.PenCapStyle.FlatCap,
+            )
+        )
 
         # Main bar
         painter.drawLine(x_start, y_start, x_start + bar_px, y_start)
@@ -186,18 +193,30 @@ class ImageViewerWidget(QGraphicsView):
            self.scale(zf, zf)
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.RightButton:
-            self.setDragMode(QGraphicsView.ScrollHandDrag)
-            fake_event = QMouseEvent(event.type(), event.pos(), Qt.LeftButton, Qt.LeftButton, event.modifiers())
+        if event.button() == Qt.MouseButton.RightButton:
+            self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+            fake_event = QMouseEvent(
+                event.type(),
+                event.pos(),
+                Qt.MouseButton.LeftButton,
+                Qt.MouseButton.LeftButton,
+                event.modifiers(),
+            )
             super().mousePressEvent(fake_event)
         else:
             super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
-        if event.button() == Qt.RightButton:
-            fake_event = QMouseEvent(event.type(), event.pos(), Qt.LeftButton, Qt.LeftButton, event.modifiers())
+        if event.button() == Qt.MouseButton.RightButton:
+            fake_event = QMouseEvent(
+                event.type(),
+                event.pos(),
+                Qt.MouseButton.LeftButton,
+                Qt.MouseButton.LeftButton,
+                event.modifiers(),
+            )
             super().mouseReleaseEvent(fake_event)
-            self.setDragMode(QGraphicsView.NoDrag)
+            self.setDragMode(QGraphicsView.DragMode.NoDrag)
         else:
             super().mouseReleaseEvent(event)
 
